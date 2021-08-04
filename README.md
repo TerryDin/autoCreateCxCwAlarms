@@ -1,8 +1,8 @@
 # autoCreateCxCwAlarms
-Create Customized CloudWatch Alarms    \<br>
+Create Customized CloudWatch Alarms
 
 
-WorkSpace: dir <autoCreateCxCw>    \<br>
+WorkSpace: dir <autoCreateCxCw>
 anqdian@3c22fb7680e6 autoCreateCxCw % tree ./
 ./
 ├── Lambda1-ALB
