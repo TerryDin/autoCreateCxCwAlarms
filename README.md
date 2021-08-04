@@ -80,12 +80,12 @@ Lambda 2用于针对自动创建监控的告警信息 进行定制化。    <br>
 
     aws iam create-role --role-name <lambdaExecRole-autoCreateCxCwAlarms_RDS> --description <"Lambda execution role for Auto create customized CloudWatch alarms for RDS. "> --assume-role-policy-document <file://assumeRolePolicyDocument.json>
 ```
-<br>
+
 > Attach权限策略：    <br>
 ```
     aws iam attach-role-policy --role-name <lambdaExecRole-autoCreateCxCwAlarms_RDS> --policy-arn <arn:aws:iam::aws:policy/AmazonRDSFullAccess> --policy-arn <arn:aws:iam::aws:policy/AmazonEC2FullAccess>
 ```
-<br>
+
 > 创建Lambda layer：    <br>
 安装PyTZ library，用于本地化时区。    <br>
 ```
@@ -95,7 +95,7 @@ Lambda 2用于针对自动创建监控的告警信息 进行定制化。    <br>
 
     aws lambda publish-layer-version --layer-name <customizedAlarms-RDS_DatabaseConnections> --description <"Customize CloudWatch alarms for RDS - DatabaseConnections. "> --compatible-runtimes python3.8 --zip-file <fileb://SNSSubscribtion-pytzLayer.zip>
 ```
-<br>
+
 > 部署Lambda 2：    <br>
 ```
     anqdian@3c22fb7680e6 Lambda2 % pwsh
