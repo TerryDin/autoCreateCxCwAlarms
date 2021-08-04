@@ -1,0 +1,121 @@
+from __future__ import print_function
+from botocore.exceptions import ClientError
+from base64 import b64decode
+import subprocess
+import logging
+import json
+import os
+import requests
+import json
+import boto3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+#def run_command(command):
+#    command_list = command.split(' ')
+#
+#    try:
+#        logger.info("Running shell command: \"{}\"".format(command))
+#        result = subprocess.run(command_list, stdout=subprocess.PIPE);
+#        logger.info("Command output:\n---\n{}\n---".format(result.stdout.decode('UTF-8')))
+#    except Exception as e:
+#        logger.error("Exception: {}".format(e))
+#        return False
+#
+#    return True
+
+
+# The 'handler' Python function is the entry point for AWS Lambda function invocations.
+def handler(event, context):
+
+#    content = 'CloudWatch Alarm! {0}'.format(get_message(event))
+#    webhook_uri = os.environ['CHIME_WEBHOOK']
+#    requests.post(url=webhook_uri, json={ 'Content': content })
+#    print('------')
+#    print('print event')
+#    print(event)
+
+
+    stsClient = boto3.client('sts')
+    accountId = stsClient.get_caller_identity().get('Account')
+    print('------')
+    print('Account: '+accountId)
+
+
+#   List metrics through the pagination interface
+    CW_client = boto3.client('cloudwatch')
+    CW_paginator = CW_client.get_paginator('describe_alarms')
+    CW_iterator = CW_paginator.paginate()
+    CW_filteredIterator = CW_iterator.search("MetricAlarms[?MetricName==`DatabaseConnections` && Namespace==`AWS/RDS`]")
+
+#   Prepare target RDS list
+    RDS_client = boto3.client('rds')
+    RDS_paginator = RDS_client.get_paginator('describe_db_instances')
+    RDS_iterator = RDS_paginator.paginate(
+        PaginationConfig={
+            # 最大创建RDS CloudWatch alarms的数量
+            'MaxItems': 10000,
+            # 演示分页，最小20，最大100
+            'PageSize': 100
+        }
+    )
+
+#   Prepare RDS full list
+    print('------')
+    print('RDS full list:')
+    RDS_rawList = []
+    RDS_nameList = []
+#    RDS_idList = []
+    for RDS_response in RDS_iterator:
+        RDS_rawList.extend(RDS_response['DBInstances'])
+#   for list in RDS_rawList: 
+    for dict in RDS_rawList:
+        for i in dict.items():
+            if i[0] == "DBInstanceIdentifier":
+                print(i[1])
+                RDS_nameList.append(i[1])
+#                RDS_idList.append(i[1].split('/',1)[1])
+
+
+#   Truncate all CloudWatch alarms created by this function: 
+    print('------')
+    for rds_record in RDS_rawList:
+        RDS_tags = RDS_client.list_tags_for_resource(
+            ResourceName = rds_record['DBInstanceArn']
+        )
+        for tag in RDS_tags['TagList']:
+            if (tag['Key'] == 'CWalarm-DatabaseConnections') and (tag['Value'] == 'enabled'):
+                rds_name = rds_record['DBInstanceArn'].split(':', 6)[6]
+                alarm_name = ('RDS_DatabaseConnections-'+rds_name)
+                
+#               Drop CloudWatch alarm <RDS_DatabaseConnections->
+#                print('rds_name: '+rds_name)
+                print('Droping CloudWatch alarm: '+alarm_name)
+                drop_CWalarms = CW_client.delete_alarms(
+                    AlarmNames=[
+                        alarm_name
+                    ]
+                )
+                
+#               Remove ALB tag <CWalarm-HTTPCode_Target_5XX_Count>
+                response = RDS_client.remove_tags_from_resource(
+                    ResourceName=
+                        rds_record['DBInstanceArn']
+                    ,
+                    TagKeys=[
+                        tag['Key']
+                    ]
+                )
+                print('Dropped CloudWatch alarm: '+alarm_name)
+
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Mission Complete!')
+    }
+
+
+#run_command('/var/task/aws --version')
+#run_command('ls -l')

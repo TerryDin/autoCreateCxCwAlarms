@@ -1,0 +1,134 @@
+from __future__ import print_function
+from botocore.exceptions import ClientError
+from base64 import b64decode
+import subprocess
+import logging
+import json
+import os
+import json
+import boto3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+def is_existed_inList(target, list):
+    if target in list:
+        return False
+    else:
+        return True
+
+
+#def run_command(command):
+#    command_list = command.split(' ')
+#
+#    try:
+#        logger.info("Running shell command: \"{}\"".format(command))
+#        result = subprocess.run(command_list, stdout=subprocess.PIPE);
+#        logger.info("Command output:\n---\n{}\n---".format(result.stdout.decode('UTF-8')))
+#    except Exception as e:
+#        logger.error("Exception: {}".format(e))
+#        return False
+#
+#    return True
+
+
+# The 'handler' Python function is the entry point for AWS Lambda function invocations.
+def handler(event, context):
+
+#    content = 'CloudWatch Alarm! {0}'.format(get_message(event))
+#    webhook_uri = os.environ['CHIME_WEBHOOK']
+#    requests.post(url=webhook_uri, json={ 'Content': content })
+#    print('------')
+#    print('print event')
+#    print(event)
+
+
+    stsClient = boto3.client('sts')
+    accountId = stsClient.get_caller_identity().get('Account')
+    print('------')
+    print('Account: '+accountId)
+
+
+#   List metrics through the pagination interface
+    CW_client = boto3.client('cloudwatch')
+    CW_paginator = CW_client.get_paginator('describe_alarms')
+    CW_iterator = CW_paginator.paginate()
+    CW_filteredIterator = CW_iterator.search("MetricAlarms[?MetricName==`HTTPCode_Target_5XX_Count` && Namespace==`AWS/ApplicationELB`]")
+
+#   Prepare target ALB list
+    appELB_client = boto3.client('elbv2')
+    appELB_paginator = appELB_client.get_paginator('describe_load_balancers')
+    appELB_iterator = appELB_paginator.paginate(
+        PaginationConfig={
+            # 最大创建ALB CloudWatch alarms的数量
+            # 在产线实测阶段，可将值调整为2
+            'MaxItems': 10000,
+            # 演示分页，最大可以设置成400
+            'PageSize': 20
+        }
+    )
+
+
+#   Prepare ALB full list
+    print('------')
+    print('ALB full list:')
+    appELB_rawList = []
+    appELB_idList = []
+    appELB_nameList = []
+    for appELB_response in appELB_iterator:
+#        'Scheme': 'internet-facing'
+#        print(appELB_response['LoadBalancers'])
+        appELB_rawList.extend(appELB_response['LoadBalancers'])
+#   for list in appELB_rawList: 
+    for dict in appELB_rawList:
+        for i in dict.items():
+            if i[0] == "LoadBalancerArn":
+                print(i[1].split('/',3)[2])
+                appELB_idList.append(i[1].split('/',1)[1])
+                appELB_nameList.append(i[1].split('/',3)[2])
+
+
+#   Truncate all CloudWatch alarms created by this function: 
+    print('------')
+    for appELB in appELB_rawList:
+        appELB_tags = appELB_client.describe_tags(
+            ResourceArns = [
+                appELB['LoadBalancerArn']
+            ]
+        )
+        for tagDesc in appELB_tags['TagDescriptions']:
+            for tag in tagDesc['Tags']:
+                if (tag['Key'] == 'CWalarm-HTTPCode_Target_5XX_Count') and (tag['Value'] == 'enabled'):
+                    appELB_name = appELB['LoadBalancerArn'].split('/', 3)[2]
+                    alarm_name = ('appELB_HTTPCode_Target_5XX_Count-'+appELB_name)
+
+#                   Drop CloudWatch alarm <appELB_HTTPCode_Target_5XX_Count->
+#                    print(appELB['LoadBalancerArn'].split('/', 3)[2])
+                    print('Droping CloudWatch alarm: '+alarm_name)
+                    drop_CWalarms = CW_client.delete_alarms(
+                        AlarmNames=[
+                            alarm_name
+                        ]
+                    )
+
+#                   Remove ALB tag <CWalarm-HTTPCode_Target_5XX_Count>
+                    response = appELB_client.remove_tags(
+                        ResourceArns=[
+                            appELB['LoadBalancerArn'],
+                        ],
+                        TagKeys=[
+                            tag['Key'],
+                        ]
+                    )
+                    print('Dropped CloudWatch alarm: '+alarm_name)
+
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Mission Complete!')
+    }
+
+
+#run_command('/var/task/aws --version')
+#run_command('ls -l')
